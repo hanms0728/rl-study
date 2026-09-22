@@ -81,6 +81,23 @@ def _linear_system_pieces(env: GridWorld) -> tuple:
     return trans, reward
 
 
+def _terminates_everywhere(P: np.ndarray, tol: float = 1e-12) -> np.ndarray:
+    """정책마다 "모든 내부 상태에서 종결에 닿는가". ``(B,)`` 불리언 배열.
+
+    ``P[b, i, j]``는 내부 상태끼리의 전이 확률이므로, 1 벡터에 ``n``번 곱하면
+    ``n``걸음을 버티고도 아직 내부에 남아 있을 확률이 된다. 종결이 닿는
+    칸이라면 최단 경로가 ``n``걸음을 넘지 않으므로 그 확률이 1보다 작아진다.
+    1로 남는 칸이 있으면 그 정책은 거기서 영영 맴돈다.
+
+    ``gamma < 1``에서는 맴돌아도 값이 유한하니 쓸 일이 없다. ``gamma = 1``에서
+    만 부른다. 그런 정책은 ``I - P``가 특이행렬이라 풀 수조차 없다.
+    """
+    survive = np.ones(P.shape[:2])
+    for _ in range(P.shape[1]):
+        survive = np.einsum("bij,bj->bi", P, survive)
+    return survive.max(axis=1) < 1.0 - tol
+
+
 def exhaustive_search(env: GridWorld, gamma: float, batch: int = 20_000,
                       max_policies: int = 20_000_000, verbose: bool = True):
     """결정적 정책을 전부 정확히 평가하고 제일 좋은 것을 고른다.
@@ -95,6 +112,14 @@ def exhaustive_search(env: GridWorld, gamma: float, batch: int = 20_000,
     정책을 ``|A|``진수 자릿수로 펼치고 연립방정식을 ``batch``개씩 묶어
     ``np.linalg.solve``에 넘긴다. 4백만 번을 파이썬 루프로 돌리면 몇 시간
     걸린다.
+
+    ``gamma = 1``에서는 종결에 닿지 않는 정책을 빼고 센다. 그런 정책은
+    ``I - P``가 특이행렬이라 값이 아예 정의되지 않고, 묶음 풀이 하나를 통째로
+    깨뜨린다. 걸음 보상이 음수면 그 정책의 수익은 어차피 마이너스 무한대다.
+    다만 모든 종결 보상이 음수인 판이라면 영원히 맴도는 쪽이 최적일 수 있고,
+    그때는 여기서 고른 답이 *종결하는 정책 중에서만* 최적이다.
+
+    ``gamma < 1``이면 맴돌아도 값이 유한하므로 아무것도 걸러내지 않는다.
     """
     trans, reward = _linear_system_pieces(env)
     n = trans.shape[0]
@@ -115,15 +140,25 @@ def exhaustive_search(env: GridWorld, gamma: float, batch: int = 20_000,
 
     best_score = -np.inf
     best_actions = None
+    skipped = 0
     started = time.perf_counter()
 
     for first in range(0, total, batch):
         codes = np.arange(first, min(first + batch, total), dtype=np.int64)
         actions = (codes[:, None] // place_value) % N_ACTIONS   # (B, n)
-        A = identity - gamma * trans[rows, actions]             # (B, n, n)
+        P = trans[rows, actions]                                # (B, n, n)
+        A = identity - gamma * P
         b = reward[rows, actions]                               # (B, n)
-        values = np.linalg.solve(A, b[..., None])[..., 0]       # (B, n)
-        scores = values @ weights
+
+        scores = np.full(len(codes), -np.inf)
+        keep = _terminates_everywhere(P) if gamma >= 1.0 else slice(None)
+        if gamma >= 1.0:
+            skipped += int((~keep).sum())
+            if not keep.any():
+                continue
+        values = np.linalg.solve(A[keep], b[keep][..., None])[..., 0]
+        scores[keep] = values @ weights
+
         winner = int(scores.argmax())
         if scores[winner] > best_score:
             best_score = float(scores[winner])
@@ -134,6 +169,13 @@ def exhaustive_search(env: GridWorld, gamma: float, batch: int = 20_000,
                   f"{best_score:9.4f}", flush=True)
 
     seconds = time.perf_counter() - started
+    if best_actions is None:
+        raise ValueError(
+            f"{env.name}: no policy reaches a terminal from every cell, so "
+            f"gamma = {gamma:g} leaves nothing with a finite value")
+    if verbose and skipped:
+        print(f"  skipped {skipped:,} of {total:,} policies that never reach "
+              f"a terminal (gamma = {gamma:g} gives them no finite value)")
 
     V = np.zeros(env.n_states)
     pi = np.zeros((env.n_states, N_ACTIONS))
@@ -175,7 +217,7 @@ def main(gamma: float = 0.9, noise: float = 0.0,
     V, pi_one, total, seconds = exhaustive_search(env, gamma)
     pi = optimal_policy_is_tied_everywhere(env, V, gamma)
 
-    print(f"\nsearched {total:,} policies in {seconds:.1f}s")
+    print(f"\nenumerated {total:,} policies in {seconds:.1f}s")
     print(gw.render_values(env, V))
     print()
     print(gw.render_policy(env, pi))
