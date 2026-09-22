@@ -308,7 +308,7 @@ def draw_q_grid(ax, env: GridWorld, Q, *, title=None, cmap=None, norm=None,
 
 # --- 그림 장식 ----------------------------------------------------------
 # 이름 -> 그림에 적을 기호.
-SYMBOLS = {"gamma": "\u03b3", "theta": "\u03b8"}
+SYMBOLS = {"gamma": "\u03b3", "theta": "\u03b8", "step_reward": "r_step"}
 
 
 def params_text(**fixed) -> str:
@@ -610,10 +610,13 @@ def banner(text: str) -> None:
 
 
 def figure_path(name: str, **fixed):
-    """``FIGURES/<name>_g0.9_n0.2.png``.
+    """``FIGURES/<name>_g0.9_n0.2_s0.png``.
 
     그 그림이 *고정한* 값만 넘긴다. gamma를 훑는 그림에 gamma를 붙이면
     거짓말이 되므로, 훑는 값은 빼고 부른다.
+
+    ``g``/``n``/``s``가 각각 gamma, noise, step_reward다. 고정했으면 기본값
+    이어도 붙인다. 안 붙이면 그 설정으로 돌린 것인지 알 수 없기 때문이다.
     """
     tags = "".join(f"_{key}{value:g}" for key, value in fixed.items())
     return FIGURES / f"{name}{tags}.png"

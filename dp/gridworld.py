@@ -379,11 +379,11 @@ def describe_outcome(env: GridWorld, pi: np.ndarray) -> str:
 # ----------------------------------------------------------------------
 # python -m dp.gridworld
 # ----------------------------------------------------------------------
-def main(noise: float = 0.2) -> None:
+def main(noise: float = 0.2, step_reward: float = 0.0) -> None:
     from . import viz  # viz가 이 모듈을 import 하므로 여기서 불러온다
 
     viz.begin_demo("1. The MDP")
-    env = main_grid()
+    env = main_grid(step_reward=step_reward)
     names = env.state_names
 
     print(f"S: {len(env.states)} states, " + ", ".join(
@@ -395,9 +395,11 @@ def main(noise: float = 0.2) -> None:
             ("###" if (r, c) in env.walls else names[env.to_s((r, c))]).rjust(5)
             for c in range(env.n_cols)))
 
-    print("\nR(s): " + ", ".join(
-        f"{names[env.to_s(rc)]} = {v:+g}"
-        for rc, v in sorted(env.terminals.items())) + ", and 0 elsewhere")
+    # 종결 칸에 들어가면 step_reward + 도착 보상을 받는다. 전이표와 같은 수를
+    # 찍어야 하므로 도착 보상만 따로 보여주지 않는다.
+    arrivals = ", ".join(f"{names[env.to_s(rc)]} = {step_reward + v:+g}"
+                         for rc, v in sorted(env.terminals.items()))
+    print(f"\nR(s): {arrivals}, and {step_reward:g} elsewhere")
     print(f"p0: uniform 1/{len(env.p0)} over the non-terminal states")
 
     s5, s7 = env.to_s((1, 1)), env.to_s((1, 4))
@@ -409,7 +411,7 @@ def main(noise: float = 0.2) -> None:
             print(f"  P[{label}][{ACTION_NAMES[a]}] = ({prob:g}, {names[s2]}, "
                   f"{reward:+g}, {done}){note}")
 
-    noisy = main_grid(noise=noise)
+    noisy = main_grid(noise=noise, step_reward=step_reward)
     print(f"\nThe same two with noise = {noise:g}:")
     for label, s, a in (("s5", s5, RIGHT), ("s7", s7, LEFT)):
         outcomes = ", ".join(f"({p:g}, {names[s2]}, {r:+g}, {d})"
@@ -425,4 +427,4 @@ def main(noise: float = 0.2) -> None:
 
 if __name__ == "__main__":
     from . import viz
-    main(**vars(viz.demo_args(noise=0.2)))
+    main(**vars(viz.demo_args(noise=0.2, step_reward=0.0)))

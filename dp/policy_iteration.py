@@ -158,12 +158,12 @@ def policy_iteration(env: GridWorld, gamma: float, theta: float = 1e-10,
 # ----------------------------------------------------------------------
 # python -m dp.policy_iteration
 # ----------------------------------------------------------------------
-def _evaluation(viz, gamma, noise) -> None:
+def _evaluation(viz, gamma, noise, step_reward) -> None:
     """균등 무작위 정책을 평가하면서 sweep별 스냅샷을 찍는다. fig10."""
     from . import gridworld as gw
 
     viz.banner("5a. Evaluating the uniform random policy")
-    env = gw.main_grid(noise=noise)
+    env = gw.main_grid(noise=noise, step_reward=step_reward)
     snapshots_at = (0, 1, 2, 3, 10)
     ev = policy_evaluation(env, gw.uniform_random_policy(env), gamma=gamma,
                            theta=1e-12, snapshots_at=snapshots_at)
@@ -175,20 +175,22 @@ def _evaluation(viz, gamma, noise) -> None:
     panels.append(("k = inf  (v_pi)", ev.V, gw.greedy_policy(env, ev.V, gamma)))
     viz.figure_panels(
         env, panels,
-        path := viz.figure_path("10_policy_evaluation", g=gamma, n=noise),
+        path := viz.figure_path("10_policy_evaluation", g=gamma, n=noise,
+                                s=step_reward),
         ncols=3, value_fmt="{:.1f}",
-        params=viz.params_text(gamma=gamma, noise=noise))
+        params=viz.params_text(gamma=gamma, noise=noise,
+                               step_reward=step_reward))
     viz.wrote(path)
 
 
-def _cost(viz, gamma, noise) -> None:
+def _cost(viz, gamma, noise, step_reward) -> None:
     """변형별 sweep 수를 재고 수렴 곡선을 그린다. fig11, fig12."""
     from . import gridworld as gw
     from .q_value_iteration import q_value_iteration
     from .value_iteration import value_iteration
 
     viz.banner("5b. What policy iteration costs")
-    noisy = gw.main_grid(noise=noise)
+    noisy = gw.main_grid(noise=noise, step_reward=step_reward)
     theta = 1e-10
     runs = {
         "value iteration (in-place)":
@@ -224,12 +226,14 @@ def _cost(viz, gamma, noise) -> None:
         noisy,
         [(f"policy iteration   {pit.n_sweeps} sweeps", pit.V, pit.pi),
          (f"value iteration   {vi.n_sweeps} sweeps", vi.V, vi.pi)],
-        compare_path := viz.figure_path("11_pi_vs_vi", g=gamma, n=noise),
-        ncols=2, params=viz.params_text(gamma=gamma, noise=noise))
+        compare_path := viz.figure_path("11_pi_vs_vi", g=gamma, n=noise,
+                                        s=step_reward),
+        ncols=2, params=viz.params_text(gamma=gamma, noise=noise,
+                                        step_reward=step_reward))
 
     # warm_start의 방향이 격자에 따라 갈리므로 양쪽을 다 측정한다.
     cold = extra["policy iteration (from V = 0)"]
-    plain = gw.main_grid()
+    plain = gw.main_grid(step_reward=step_reward)
     plain_warm = policy_iteration(plain, gamma=gamma, theta=theta)
     plain_cold = policy_iteration(plain, gamma=gamma, theta=theta,
                                   warm_start=False)
@@ -251,25 +255,29 @@ def _cost(viz, gamma, noise) -> None:
     totals = {label: r.n_sweeps for label, r in {**runs, **extra}.items()}
     viz.figure_convergence(
         {label: runs[label].deltas for label in runs}, totals,
-        curve_path := viz.figure_path("12_convergence", g=gamma, n=noise),
-        subtitle=viz.params_text(gamma=gamma, noise=noise, theta=theta),
+        curve_path := viz.figure_path("12_convergence", g=gamma, n=noise,
+                                      s=step_reward),
+        subtitle=viz.params_text(gamma=gamma, noise=noise,
+                                 step_reward=step_reward, theta=theta),
         theta=theta, xlim=45)
     viz.wrote(compare_path)
     viz.wrote(curve_path)
 
 
-def main(gamma: float | None = None, noise: float | None = None) -> None:
+def main(gamma: float | None = None, noise: float | None = None,
+         step_reward: float = 0.0) -> None:
     from . import viz
     from .value_iteration import GAMMA_VI, NOISE_VI
 
     gamma = GAMMA_VI if gamma is None else gamma
     noise = NOISE_VI if noise is None else noise
     viz.begin_demo("5. Policy iteration")
-    _evaluation(viz, gamma, noise)
-    _cost(viz, gamma, noise)
+    _evaluation(viz, gamma, noise, step_reward)
+    _cost(viz, gamma, noise, step_reward)
 
 
 if __name__ == "__main__":
     from . import viz
     from .value_iteration import GAMMA_VI, NOISE_VI
-    main(**vars(viz.demo_args(gamma=GAMMA_VI, noise=NOISE_VI)))
+    main(**vars(viz.demo_args(gamma=GAMMA_VI, noise=NOISE_VI,
+                              step_reward=0.0)))

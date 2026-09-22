@@ -89,7 +89,7 @@ SHOWN_NOISE = ((0.0, "nothing to avoid"),
                (0.2, "refuses the risk"))
 
 
-def _discount(env, viz, noise) -> None:
+def _discount(env, viz, noise, step_reward) -> None:
     """할인율을 바꾸면 최적 정책이 어느 보상으로 향하는지 본다. fig03, fig04."""
     from . import gridworld as gw
 
@@ -106,16 +106,24 @@ def _discount(env, viz, noise) -> None:
 
     # s2에서 동전(+1)은 1칸, 보석(+10)은 9칸이고 보상은 진입 전이에서 나오므로
     # 두 수익은 gamma**0 * 1과 gamma**8 * 10이다. 같아지는 지점이 교차점.
-    crossover = 0.1 ** (1 / 8)
-    print(f"\ns2: coin is 1 step away, gem is 9, so the returns compared are "
-          f"1 and\n10 * gamma**8. They cross at 0.1**(1/8) = {crossover:.4f}.\n")
+    if step_reward == 0.0:
+        crossover = 0.1 ** (1 / 8)
+        print(f"\ns2: coin is 1 step away, gem is 9, so the returns compared "
+              f"are 1 and\n10 * gamma**8. They cross at 0.1**(1/8) = "
+              f"{crossover:.4f}.\n")
+    else:
+        print(f"\ns2: coin is 1 step away, gem is 9. With step_reward = "
+              f"{step_reward:g} each\nreturn carries a step term too, so the "
+              f"closed form above no longer holds.\n")
 
     viz.figure_panels(
         env,
         [(f"\u03b3 = {GAMMA_NEAR:g}", near.V, near.pi),
          (f"\u03b3 = {GAMMA_FAR:g}", far.V, far.pi)],
-        discount_path := viz.figure_path("03_discount", n=noise),
-        ncols=2, shared_scale=False, params=viz.params_text(noise=noise))
+        discount_path := viz.figure_path("03_discount", n=noise,
+                                         s=step_reward),
+        ncols=2, shared_scale=False,
+        params=viz.params_text(noise=noise, step_reward=step_reward))
 
     panels = []
     gem_column = list(env.terminal_states).index(env.to_s((1, 3)))
@@ -129,18 +137,21 @@ def _discount(env, viz, noise) -> None:
         panels.append((f"\u03b3 = {gamma:g}", vi.V, vi.pi))
     viz.figure_panels(
         env, panels,
-        sweep_path := viz.figure_path("04_discount_sweep", n=noise),
-        ncols=4, value_fmt="{:.2f}", params=viz.params_text(noise=noise))
+        sweep_path := viz.figure_path("04_discount_sweep", n=noise,
+                                      s=step_reward),
+        ncols=4, value_fmt="{:.2f}",
+        params=viz.params_text(noise=noise, step_reward=step_reward))
     viz.wrote(discount_path)
     viz.wrote(sweep_path)
 
 
-def _sweeps(viz, gamma, noise):
+def _sweeps(viz, gamma, noise, step_reward):
     """sweep마다 V의 스냅샷을 찍어 값이 퍼지는 과정을 본다. fig05."""
     from . import gridworld as gw
 
-    viz.banner(f"3b. Sweep by sweep  (gamma = {gamma:g}, noise = {noise:g})")
-    noisy = gw.main_grid(noise=noise)
+    viz.banner(f"3b. Sweep by sweep  (gamma = {gamma:g}, noise = {noise:g}, "
+               f"step = {step_reward:g})")
+    noisy = gw.main_grid(noise=noise, step_reward=step_reward)
     snapshots_at = (0, 1, 2, 3, 5)
     swept = value_iteration(noisy, gamma=gamma, in_place=False,
                             snapshots_at=snapshots_at)
@@ -158,20 +169,23 @@ def _sweeps(viz, gamma, noise):
     panels.append(("converged", swept.V, swept.pi))
     viz.figure_panels(
         noisy, panels,
-        path := viz.figure_path("05_vi_sweeps", g=gamma, n=noise), ncols=3,
-        params=viz.params_text(gamma=gamma, noise=noise))
+        path := viz.figure_path("05_vi_sweeps", g=gamma, n=noise,
+                                s=step_reward), ncols=3,
+        params=viz.params_text(gamma=gamma, noise=noise,
+                               step_reward=step_reward))
     viz.wrote(path)
     return vi
 
 
-def _noise(env, viz, gamma) -> None:
+def _noise(env, viz, gamma, step_reward) -> None:
     """noise를 훑으면서 두 위험한 칸의 행동과 함정 확률을 표로 찍는다. fig06.
 
     noise를 훑는 것이 이 실험이므로 --noise는 여기에 영향을 주지 않는다.
     """
     from . import gridworld as gw
 
-    viz.banner(f"3c. Sweeping the transition noise  (gamma = {gamma:g})")
+    viz.banner(f"3c. Sweeping the transition noise  (gamma = {gamma:g}, "
+               f"step = {step_reward:g})")
     # 보석으로 가는 길목에서 위험한 행동과 안전한 행동을 함께 가진 두 칸.
     # 안전한 쪽은 벽이나 판 가장자리로 들어가는 행동이라 함정에 닿을 수 없다.
     risky_cells = {(3, 3): "s14", (2, 4): "s10"}
@@ -188,7 +202,7 @@ def _noise(env, viz, gamma) -> None:
     header = "".join(f"{n} plays".rjust(20) for n in risky_cells.values())
     print(f"{'noise':>7}{'V*(s2)':>10}{header}   outcome under p0")
     for noise in (0.0, 0.05, 0.08, 0.1, 0.12, 0.2, 0.5):
-        e = gw.main_grid(noise=noise)
+        e = gw.main_grid(noise=noise, step_reward=step_reward)
         vi = value_iteration(e, gamma=gamma)
         cells = "".join(plays(e, vi.pi, rc).rjust(20) for rc in risky_cells)
         print(f"{noise:>7.2f}{vi.V[e.to_s((0, 1))]:>10.4f}{cells}   "
@@ -196,7 +210,7 @@ def _noise(env, viz, gamma) -> None:
 
     panels = []
     for noise, caption in SHOWN_NOISE:
-        e = gw.main_grid(noise=noise)
+        e = gw.main_grid(noise=noise, step_reward=step_reward)
         vi = value_iteration(e, gamma=gamma)
         print(f"\nnoise = {noise:g}   ({caption})")
         print(gw.render_policy(e, vi.pi))
@@ -204,22 +218,26 @@ def _noise(env, viz, gamma) -> None:
 
     viz.figure_panels(
         env, panels,
-        path := viz.figure_path("06_noise_sweep", g=gamma), ncols=3,
-        params=viz.params_text(gamma=gamma))
+        path := viz.figure_path("06_noise_sweep", g=gamma, s=step_reward),
+        ncols=3,
+        params=viz.params_text(gamma=gamma, step_reward=step_reward))
     viz.wrote(path)
 
 
-def main(gamma: float = GAMMA_VI, noise: float = NOISE_VI) -> None:
+def main(gamma: float = GAMMA_VI, noise: float = NOISE_VI,
+         step_reward: float = 0.0) -> None:
     from . import gridworld as gw
     from . import viz
 
     viz.begin_demo("3. Value iteration")
     # 할인율 실험은 결정적 격자에서 돈다.
-    _discount(gw.main_grid(), viz, noise=0.0)
-    _sweeps(viz, gamma, noise)
-    _noise(gw.main_grid(), viz, gamma)
+    _discount(gw.main_grid(step_reward=step_reward), viz, noise=0.0,
+              step_reward=step_reward)
+    _sweeps(viz, gamma, noise, step_reward)
+    _noise(gw.main_grid(step_reward=step_reward), viz, gamma, step_reward)
 
 
 if __name__ == "__main__":
     from . import viz
-    main(**vars(viz.demo_args(gamma=GAMMA_VI, noise=NOISE_VI)))
+    main(**vars(viz.demo_args(gamma=GAMMA_VI, noise=NOISE_VI,
+                              step_reward=0.0)))

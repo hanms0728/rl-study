@@ -158,13 +158,14 @@ def optimal_policy_is_tied_everywhere(env: GridWorld, V: np.ndarray,
 # ----------------------------------------------------------------------
 # python -m dp.exact
 # ----------------------------------------------------------------------
-def main(gamma: float = 0.9, noise: float = 0.0) -> None:
+def main(gamma: float = 0.9, noise: float = 0.0,
+         step_reward: float = 0.0) -> None:
     from . import gridworld as gw
     from . import viz
     from .value_iteration import value_iteration
 
     viz.begin_demo("2. The exact answer, without iterating")
-    env = main_grid(noise=noise)
+    env = main_grid(noise=noise, step_reward=step_reward)
 
     print(f"{env.name}, gamma = {gamma}")
     print(f"interior states: {len(env.interior_states)}, actions: {N_ACTIONS}")
@@ -188,14 +189,15 @@ def main(gamma: float = 0.9, noise: float = 0.0) -> None:
     print(f"\nOne more interior cell multiplies the search by {N_ACTIONS} "
           "and the sweep count by\nalmost nothing.")
 
-    path = viz.figure_path("02_exact", g=gamma, n=noise)
+    path = viz.figure_path("02_exact", g=gamma, n=noise, s=step_reward)
     viz.figure_value_policy(
         env, V, pi, path,
-        subtitle=viz.params_text(gamma=gamma, noise=noise))
+        subtitle=viz.params_text(gamma=gamma, noise=noise,
+                                 step_reward=step_reward))
     print()
     viz.wrote(path)
 
 
 if __name__ == "__main__":
     from . import viz
-    main(**vars(viz.demo_args(gamma=0.9, noise=0.0)))
+    main(**vars(viz.demo_args(gamma=0.9, noise=0.0, step_reward=0.0)))
