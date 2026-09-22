@@ -37,8 +37,9 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.colors import LinearSegmentedColormap, Normalize, TwoSlopeNorm
 from matplotlib.patches import FancyBboxPatch, Polygon, Rectangle
+from matplotlib.patheffects import withStroke
 
-from .gridworld import ACTION_DELTAS, ACTIONS, N_ACTIONS, GridWorld
+from .gridworld import ACTION_DELTAS, ACTIONS, LEFT, N_ACTIONS, GridWorld
 
 # --- 팔레트 -------------------------------------------------------------
 SURFACE = "#fcfcfb"
@@ -166,6 +167,22 @@ def _draw_terminal(ax, env, rc, x, y):
             fontweight="semibold", zorder=4)
 
 
+def _draw_name(ax, name, x, y, ink, fontsize=9.0, halo=None):
+    """칸 이름을 왼쪽 위 모서리에. 값 숫자는 오른쪽 위로 비켜준다.
+
+    콘솔이 s1..s15로 말하는 칸을 그림에서 바로 찾을 수 있어야 하므로, 읽는
+    데 힘이 들지 않게 굵게 쓰고 잉크를 죽이지 않는다.
+
+    ``halo``는 글자를 두를 색이다. Q 칸에서는 이 모서리가 쐐기 사이로 비치는
+    흰 대각선과 탐욕 표시 테두리 위에 걸리므로, 그 자리 쐐기의 색으로 둘러
+    글자가 끊기지 않게 한다. 검정이나 흰색으로 두르면 상자를 씌운 꼴이 된다.
+    """
+    effects = [withStroke(linewidth=2.2, foreground=halo)] if halo else None
+    ax.text(x + 0.12, y + 0.135, name, ha="left", va="center",
+            color=ink, fontsize=fontsize, fontweight="semibold",
+            zorder=6, path_effects=effects)
+
+
 def _draw_arrows(ax, pi, s, x, y, colour):
     """정책이 허용하는 모든 행동을, 칸 중심에서 뻗는 화살표로.
 
@@ -208,6 +225,7 @@ def draw_grid(ax, env: GridWorld, V=None, pi=None, *, title=None, cmap=None,
     """상태가치 격자 하나를 그린다. 색 = V(s), 화살표 = 정책."""
     if V is not None and cmap is None:
         cmap, norm = value_scale(V[list(env.interior_states)])
+    names = env.state_names
 
     for r in range(env.n_rows):
         for c in range(env.n_cols):
@@ -218,6 +236,7 @@ def draw_grid(ax, env: GridWorld, V=None, pi=None, *, title=None, cmap=None,
                 continue
             if rc in env.terminals:
                 _draw_terminal(ax, env, rc, x, y)
+                _draw_name(ax, names[env.to_s(rc)], x, y, INK)
                 continue
 
             s = env.to_s(rc)
@@ -226,19 +245,21 @@ def draw_grid(ax, env: GridWorld, V=None, pi=None, *, title=None, cmap=None,
                   lw=1.0 if V is None else 0.0)
             ink = _readable_ink(mpl.colors.to_rgba(face))
 
-            # 화살표가 있으면 숫자를 왼쪽 위 모서리로 보낸다. 화살표는 칸의
-            # 가로/세로 중심선 위에만 놓이므로 모서리와는 겹칠 수 없다.
-            # 화살표가 없으면 숫자가 가운데를 차지한다.
+            # 화살표가 있으면 숫자를 오른쪽 위 모서리로 보낸다. 왼쪽 위는
+            # 칸 이름 자리다. 화살표는 칸의 가로/세로 중심선 위에만 놓이므로
+            # 두 모서리 어느 쪽과도 겹칠 수 없다. 화살표가 없으면 숫자가
+            # 가운데를 차지한다.
             arrows = pi is not None
             if show_values and V is not None:
-                ax.text(x + (0.12 if arrows else 0.5),
+                ax.text(x + (0.88 if arrows else 0.5),
                         y + (0.135 if arrows else 0.5),
                         value_fmt.format(V[s]),
-                        ha="left" if arrows else "center", va="center",
+                        ha="right" if arrows else "center", va="center",
                         color=ink, fontsize=7.6 if arrows else 10,
                         zorder=4)
             if arrows:
                 _draw_arrows(ax, pi, s, x, y, ink)
+            _draw_name(ax, names[s], x, y, ink)
 
     _finish_axes(ax, env, title)
 
@@ -261,6 +282,7 @@ def draw_q_grid(ax, env: GridWorld, Q, *, title=None, cmap=None, norm=None,
     """행동가치 격자 하나를 그린다. 행동마다 쐐기 하나, 색은 q(s, a)."""
     if cmap is None:
         cmap, norm = value_scale(Q[list(env.interior_states)].ravel())
+    names = env.state_names
 
     for r in range(env.n_rows):
         for c in range(env.n_cols):
@@ -271,6 +293,7 @@ def draw_q_grid(ax, env: GridWorld, Q, *, title=None, cmap=None, norm=None,
                 continue
             if rc in env.terminals:
                 _draw_terminal(ax, env, rc, x, y)
+                _draw_name(ax, names[env.to_s(rc)], x, y, INK, fontsize=8.0)
                 continue
 
             s = env.to_s(rc)
@@ -302,6 +325,11 @@ def draw_q_grid(ax, env: GridWorld, Q, *, title=None, cmap=None, norm=None,
                             fontweight="semibold" if greedy else "normal",
                             color=_readable_ink(mpl.colors.to_rgba(face)),
                             zorder=5)
+            # 왼쪽 위 모서리는 left 쐐기 안이다. 그 쐐기 색 위에서 읽히게.
+            corner = cmap(norm(Q[s, LEFT]))
+            _draw_name(ax, names[s], x, y,
+                       _readable_ink(mpl.colors.to_rgba(corner)),
+                       fontsize=8.0, halo=corner)
 
     _finish_axes(ax, env, title)
 
