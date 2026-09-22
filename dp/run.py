@@ -27,9 +27,7 @@ from .value_iteration import GAMMA_VI, NOISE_VI
 def main(gamma: float = GAMMA_VI, noise: float = NOISE_VI,
          step_reward: float = 0.0) -> None:
     gridworld.main(noise=noise, step_reward=step_reward)
-    # exact는 결정적 격자에서 돈다. 노이즈를 보려면 직접 실행한다:
-    #     python -m dp.exact --noise 0.2
-    exact.main(gamma=gamma, step_reward=step_reward)
+    exact.main(gamma=gamma, noise=noise, step_reward=step_reward)
     value_iteration.main(gamma=gamma, noise=noise, step_reward=step_reward)
     q_value_iteration.main(gamma=gamma, noise=noise, step_reward=step_reward)
     policy_iteration.main(gamma=gamma, noise=noise, step_reward=step_reward)
