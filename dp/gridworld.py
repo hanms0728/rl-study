@@ -416,9 +416,11 @@ def main(noise: float = 0.2) -> None:
                              for p, s2, r, d in noisy.P[s][a])
         print(f"  P[{label}][{ACTION_NAMES[a]}] = [{outcomes}]")
 
-    viz.figure_environment(env, "The grid: rewards, walls, start",
-                           viz.FIGURES / "fig01_environment.png")
-    print(f"\nwrote {viz.FIGURES.name}/fig01_environment.png")
+    # 이 그림은 값도 정책도 안 그리므로 gamma/noise와 무관하다.
+    path = viz.figure_path("01_environment")
+    viz.figure_environment(env, path)
+    print()
+    viz.wrote(path)
 
 
 if __name__ == "__main__":

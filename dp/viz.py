@@ -36,7 +36,7 @@ import matplotlib as mpl
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.colors import LinearSegmentedColormap, Normalize, TwoSlopeNorm
-from matplotlib.patches import Circle, FancyBboxPatch, Polygon, Rectangle
+from matplotlib.patches import FancyBboxPatch, Polygon, Rectangle
 
 from .gridworld import ACTION_DELTAS, ACTIONS, N_ACTIONS, GridWorld
 
@@ -166,24 +166,25 @@ def _draw_terminal(ax, env, rc, x, y):
             fontweight="semibold", zorder=4)
 
 
-def _draw_start(ax, rc):
-    """시작 칸 모서리에 작은 고리 하나."""
-    r, c = rc
-    ax.add_patch(Circle((c + 0.165, r + 0.835), 0.058, facecolor=SURFACE,
-                        edgecolor=INK_SECONDARY, linewidth=1.5, zorder=6))
-
-
 def _draw_arrows(ax, pi, s, x, y, colour):
-    """정책이 허용하는 모든 행동을, 칸 중심에서 뻗는 화살표로."""
-    for a in ACTIONS:
-        if pi[s, a] <= 0:
-            continue
+    """정책이 허용하는 모든 행동을, 칸 중심에서 뻗는 화살표로.
+
+    화살표가 칸의 주인공이므로 중심에 놓고 크게 그린다. 값 숫자는
+    :func:`draw_grid`가 타일 위쪽 모서리로 비켜준다.
+
+    허용된 행동이 하나면 화살표를 칸 중심에 *걸쳐서* 그린다 (꼬리와 머리가
+    중심을 사이에 두고 대칭). 동점이라 여럿이면 그렇게 겹칠 수 없으므로
+    중심에서 밖으로 뻗는 형태로 바꾼다.
+    """
+    allowed = [a for a in ACTIONS if pi[s, a] > 0]
+    tail, head = (-0.23, 0.23) if len(allowed) == 1 else (0.07, 0.36)
+    for a in allowed:
         dr, dc = ACTION_DELTAS[a]
         ax.annotate(
-            "", xytext=(x + 0.5 + 0.09 * dc, y + 0.60 + 0.09 * dr),
-            xy=(x + 0.5 + 0.31 * dc, y + 0.60 + 0.31 * dr),
-            arrowprops=dict(arrowstyle="-|>,head_width=0.19,head_length=0.34",
-                            color=colour, linewidth=1.5,
+            "", xytext=(x + 0.5 + tail * dc, y + 0.5 + tail * dr),
+            xy=(x + 0.5 + head * dc, y + 0.5 + head * dr),
+            arrowprops=dict(arrowstyle="-|>,head_width=0.26,head_length=0.46",
+                            color=colour, linewidth=2.4,
                             shrinkA=0, shrinkB=0,
                             joinstyle="miter", capstyle="butt"),
             zorder=5)
@@ -203,8 +204,7 @@ def _finish_axes(ax, env, title=None):
 
 # --- 격자 패널 ----------------------------------------------------------
 def draw_grid(ax, env: GridWorld, V=None, pi=None, *, title=None, cmap=None,
-              norm=None, value_fmt="{:.2f}", show_values=True,
-              show_start=True) -> None:
+              norm=None, value_fmt="{:.2f}", show_values=True) -> None:
     """상태가치 격자 하나를 그린다. 색 = V(s), 화살표 = 정책."""
     if V is not None and cmap is None:
         cmap, norm = value_scale(V[list(env.interior_states)])
@@ -226,19 +226,20 @@ def draw_grid(ax, env: GridWorld, V=None, pi=None, *, title=None, cmap=None,
                   lw=1.0 if V is None else 0.0)
             ink = _readable_ink(mpl.colors.to_rgba(face))
 
-            # 화살표가 있으면 숫자를 타일 위쪽에 올려 겹치지 않게 하고,
-            # 없으면 가운데를 차지한다.
+            # 화살표가 있으면 숫자를 왼쪽 위 모서리로 보낸다. 화살표는 칸의
+            # 가로/세로 중심선 위에만 놓이므로 모서리와는 겹칠 수 없다.
+            # 화살표가 없으면 숫자가 가운데를 차지한다.
             arrows = pi is not None
             if show_values and V is not None:
-                ax.text(x + 0.5, y + (0.17 if arrows else 0.5),
-                        value_fmt.format(V[s]), ha="center", va="center",
-                        color=ink, fontsize=8.5 if arrows else 10,
+                ax.text(x + (0.12 if arrows else 0.5),
+                        y + (0.135 if arrows else 0.5),
+                        value_fmt.format(V[s]),
+                        ha="left" if arrows else "center", va="center",
+                        color=ink, fontsize=7.6 if arrows else 10,
                         zorder=4)
             if arrows:
                 _draw_arrows(ax, pi, s, x, y, ink)
 
-    if show_start and env.start is not None and env.start not in env.terminals:
-        _draw_start(ax, env.start)
     _finish_axes(ax, env, title)
 
 
@@ -255,8 +256,8 @@ Q_LABEL_POS = {0: (0.50, 0.20), 1: (0.78, 0.50), 2: (0.50, 0.80), 3: (0.22, 0.50
 
 
 def draw_q_grid(ax, env: GridWorld, Q, *, title=None, cmap=None, norm=None,
-                value_fmt="{:.2f}", highlight_greedy=True, show_values=True,
-                show_start=True) -> None:
+                value_fmt="{:.2f}", highlight_greedy=True,
+                show_values=True) -> None:
     """행동가치 격자 하나를 그린다. 행동마다 쐐기 하나, 색은 q(s, a)."""
     if cmap is None:
         cmap, norm = value_scale(Q[list(env.interior_states)].ravel())
@@ -302,24 +303,39 @@ def draw_q_grid(ax, env: GridWorld, Q, *, title=None, cmap=None, norm=None,
                             color=_readable_ink(mpl.colors.to_rgba(face)),
                             zorder=5)
 
-    if show_start and env.start is not None and env.start not in env.terminals:
-        _draw_start(ax, env.start)
     _finish_axes(ax, env, title)
 
 
 # --- 그림 장식 ----------------------------------------------------------
-TERMINAL_NOTE = ("Terminal cells show their reward and stay off the colour "
-                 "scale — V = 0 there by definition.   Ring marks the start.")
+# 이름 -> 그림에 적을 기호.
+SYMBOLS = {"gamma": "\u03b3", "theta": "\u03b8"}
 
 
-def _titles(fig, title, subtitle=None):
-    fig.suptitle(title, fontsize=12.5, fontweight="semibold", color=INK)
-    if subtitle:
-        fig.supxlabel(subtitle, fontsize=8.8, color=INK_SECONDARY, x=0.5)
+def params_text(**fixed) -> str:
+    """그림 맨 위에 적을 한 줄. ``"γ = 0.9     noise = 0.2"``.
+
+    값이 숫자면 그대로 쓰고, 문자열이면 그대로 내보낸다. 어떤 축을 훑는
+    그림에서는 그 축에 값 하나를 적을 수 없으므로 훑는 값들을 문자열로
+    넘긴다. 어느 쪽이든 gamma와 noise는 항상 함께 적는다.
+    """
+    def fmt(value):
+        return value if isinstance(value, str) else f"{value:g}"
+
+    return "     ".join(f"{SYMBOLS.get(key, key)} = {fmt(value)}"
+                        for key, value in fixed.items())
 
 
-def _footnote(fig, text=TERMINAL_NOTE):
-    fig.supxlabel(text, fontsize=7.6, color=INK_MUTED, x=0.5)
+def _caption(caption: str | None, params: str | None) -> str | None:
+    """패널 제목. 캡션 아래에 설정값 한 줄을 붙인다."""
+    if not params:
+        return caption
+    return f"{caption}\n{params}" if caption else params
+
+
+def _params(fig, text=None):
+    """그림 맨 위 가운데에 설정값 한 줄. 제목도 각주도 없다."""
+    if text:
+        fig.suptitle(text, fontsize=11.5, fontweight="semibold", color=INK)
 
 
 def _colorbar(fig, axes, cmap, norm, label="state value  V(s)"):
@@ -337,133 +353,125 @@ def _panel_figsize(env, ncols, nrows, cell, title_pad=0.42):
 
 
 # --- 그림들 -------------------------------------------------------------
-def figure_environment(env: GridWorld, title: str, path):
+def figure_environment(env: GridWorld, path, subtitle=None):
     """판 자체만. 보상, 벽, 시작 위치. 값도 정책도 없다."""
     cell = 0.72
     fig, ax = plt.subplots(figsize=(env.n_cols * cell + 0.5,
                                     env.n_rows * cell + 1.0))
     draw_grid(ax, env, V=None, pi=None)
-    _titles(fig, title)
-    _footnote(fig)
+    _params(fig, subtitle)
     fig.savefig(path)
     plt.close(fig)
     return path
 
 
-def figure_value_policy(env: GridWorld, V, pi, title: str, path,
-                        subtitle: str | None = None, value_fmt="{:.2f}"):
+def figure_value_policy(env: GridWorld, V, pi, path, subtitle=None,
+                        value_fmt="{:.2f}"):
     """격자 하나. 최적 가치는 색과 숫자로, 최적 정책은 화살표로."""
     cmap, norm = value_scale(V[list(env.interior_states)])
     cell = 0.86
     fig, ax = plt.subplots(figsize=(env.n_cols * cell + 1.6,
                                     env.n_rows * cell + 1.25))
-    draw_grid(ax, env, V, pi, cmap=cmap, norm=norm, value_fmt=value_fmt,
-              title=subtitle)
+    draw_grid(ax, env, V, pi, cmap=cmap, norm=norm, value_fmt=value_fmt)
     _colorbar(fig, ax, cmap, norm)
-    _titles(fig, title)
-    _footnote(fig)
+    _params(fig, subtitle)
     fig.savefig(path)
     plt.close(fig)
     return path
 
 
-def figure_panels(env: GridWorld, panels, title: str, path, *,
-                  ncols=None, shared_scale=True, value_fmt="{:.2f}",
-                  show_values=True):
-    """상태가치 패널을 줄지어 놓는다. ``panels``은 ``[(소제목, V, pi)]``.
+def figure_panels(env: GridWorld, panels, path, *, ncols=None,
+                  shared_scale=True, value_fmt="{:.2f}", show_values=True,
+                  params=None):
+    """상태가치 패널을 줄지어 놓는다. ``panels``은 ``[(캡션, V, pi)]``.
 
-    ``shared_scale``이면 모든 패널이 색 스케일 하나를 쓴다. 연속된 sweep들을
-    비교 가능하게 만드는 것이 바로 이것이다.
+    패널마다 colorbar를 따로 그리고 ``params``를 캡션에 붙인다. 표 하나를
+    잘라내 따로 써도 눈금과 설정값이 함께 붙어 오게 하려는 것이다. 그래서
+    그림 위에는 아무것도 적지 않는다.
+
+    ``shared_scale``이면 색 스케일 자체는 여전히 하나다. 연속된 sweep들을
+    비교 가능하게 만드는 것이 그것이므로, 눈금만 여러 번 그리는 셈이다.
     """
     if ncols is None:
         ncols = min(len(panels), 3 if env.n_cols > 6 else 6)
-    nrows = int(np.ceil(len(panels) / ncols))
-    interior = list(env.interior_states)
+    nrows = -(-len(panels) // ncols)
+    cell = 0.78 if env.n_cols > 6 else 0.94
 
+    cmap = norm = None
     if shared_scale:
-        stacked = np.concatenate([V[interior] for _, V, _ in panels])
+        stacked = np.concatenate([V[list(env.interior_states)]
+                                  for _, V, _ in panels])
         cmap, norm = value_scale(stacked)
-    else:
-        cmap = norm = None
 
-    cell = 0.62
     fig, axes = plt.subplots(nrows, ncols,
                              figsize=_panel_figsize(env, ncols, nrows, cell))
     axes = np.atleast_1d(axes).ravel()
 
-    for ax, (subtitle, V, pi) in zip(axes, panels):
-        pc, pn = (cmap, norm) if shared_scale else value_scale(V[interior])
-        draw_grid(ax, env, V, pi, title=subtitle, cmap=pc, norm=pn,
-                  value_fmt=value_fmt, show_values=show_values)
+    for ax, (caption, V, pi) in zip(axes, panels):
+        pc, pn = (cmap, norm) if shared_scale else value_scale(
+            V[list(env.interior_states)])
+        draw_grid(ax, env, V, pi, title=_caption(caption, params),
+                  cmap=pc, norm=pn, value_fmt=value_fmt,
+                  show_values=show_values)
+        _colorbar(fig, ax, pc, pn)
     for ax in axes[len(panels):]:
         ax.set_visible(False)
 
-    if shared_scale:
-        _colorbar(fig, list(axes[:len(panels)]), cmap, norm)
-    _titles(fig, title)
-    _footnote(fig)
     fig.savefig(path)
     plt.close(fig)
     return path
 
 
-def figure_q_values(env: GridWorld, Q, title: str, path,
-                    subtitle: str | None = None, value_fmt="{:.2f}"):
+def figure_q_values(env: GridWorld, Q, path, subtitle=None,
+                    value_fmt="{:.2f}"):
     """행동가치 격자 하나만."""
     cmap, norm = value_scale(Q[list(env.interior_states)].ravel())
     cell = 1.0
     fig, ax = plt.subplots(figsize=(env.n_cols * cell + 1.7,
                                     env.n_rows * cell + 1.25))
-    draw_q_grid(ax, env, Q, cmap=cmap, norm=norm, value_fmt=value_fmt,
-                title=subtitle)
+    draw_q_grid(ax, env, Q, cmap=cmap, norm=norm, value_fmt=value_fmt)
     _colorbar(fig, ax, cmap, norm, label="action value  q(s, a)")
-    _titles(fig, title)
-    _footnote(fig, "Outlined wedge is the greedy action, shown only where it "
-              "picks a winner.   " + TERMINAL_NOTE)
+    _params(fig, subtitle)
     fig.savefig(path)
     plt.close(fig)
     return path
 
 
-def figure_q_panels(env: GridWorld, panels, title: str, path, *, ncols=3,
-                    value_fmt="{:.1f}", shared_scale=True,
-                    highlight_greedy=True):
-    """행동가치 패널을 줄지어 놓는다. ``panels``은 ``[(소제목, Q), ...]``."""
-    interior = list(env.interior_states)
-    nrows = int(np.ceil(len(panels) / ncols))
-    if shared_scale:
-        stacked = np.concatenate([Q[interior].ravel() for _, Q in panels])
-        cmap, norm = value_scale(stacked)
-    else:
-        cmap = norm = None
+def figure_q_panels(env: GridWorld, panels, path, *, ncols=3,
+                    params=None, value_fmt="{:.2f}", show_values=True,
+                    shared_scale=True):
+    """행동가치 패널을 줄지어 놓는다. ``panels``은 ``[(캡션, Q), ...]``.
 
-    cell = 0.80
+    :func:`figure_panels`와 같다. 패널마다 눈금과 설정값을 붙인다.
+    """
+    nrows = -(-len(panels) // ncols)
+    cell = 1.0
+    cmap = norm = None
+    if shared_scale:
+        stacked = np.concatenate([Q[list(env.interior_states)].ravel()
+                                  for _, Q in panels])
+        cmap, norm = value_scale(stacked)
+
     fig, axes = plt.subplots(nrows, ncols,
                              figsize=_panel_figsize(env, ncols, nrows, cell))
     axes = np.atleast_1d(axes).ravel()
 
-    for ax, (subtitle, Q) in zip(axes, panels):
-        pc, pn = ((cmap, norm) if shared_scale
-                  else value_scale(Q[interior].ravel()))
-        draw_q_grid(ax, env, Q, title=subtitle, cmap=pc, norm=pn,
-                    value_fmt=value_fmt,
-                    highlight_greedy=highlight_greedy)
+    for ax, (caption, Q) in zip(axes, panels):
+        pc, pn = (cmap, norm) if shared_scale else value_scale(
+            Q[list(env.interior_states)].ravel())
+        draw_q_grid(ax, env, Q, title=_caption(caption, params),
+                    cmap=pc, norm=pn, value_fmt=value_fmt,
+                    show_values=show_values)
+        _colorbar(fig, ax, pc, pn, label="action value  q(s, a)")
     for ax in axes[len(panels):]:
         ax.set_visible(False)
 
-    if shared_scale:
-        _colorbar(fig, list(axes[:len(panels)]), cmap, norm,
-                  label="action value  q(s, a)")
-    _titles(fig, title)
-    _footnote(fig, "Outlined wedge is the greedy action, shown only where it "
-              "picks a winner.   " + TERMINAL_NOTE)
     fig.savefig(path)
     plt.close(fig)
     return path
 
 
-def figure_v_and_q(env: GridWorld, V, pi, Q, title: str, path,
-                   subtitle: str | None = None):
+def figure_v_and_q(env: GridWorld, V, pi, Q, path, subtitle=None):
     """두 표를 나란히, 공유된 색 스케일 하나 위에.
 
     같은 해를 두 가지로 쓴 것이다. 오른쪽의 모든 쐐기가 ``q(s, a)``이고,
@@ -476,21 +484,19 @@ def figure_v_and_q(env: GridWorld, V, pi, Q, title: str, path,
     cell = 0.92
     fig, (ax, bx) = plt.subplots(
         1, 2, figsize=(2 * env.n_cols * cell + 1.8, env.n_rows * cell + 1.6))
-    draw_grid(ax, env, V, pi, title="state values  V(s)  +  greedy policy",
-              cmap=cmap, norm=norm)
-    draw_q_grid(bx, env, Q, title="action values  q(s, a)", cmap=cmap,
-                norm=norm)
-    _colorbar(fig, [ax, bx], cmap, norm, label="value")
-    _titles(fig, title)
-    _footnote(fig, (subtitle + "   " if subtitle else "")
-              + "V(s) is the largest wedge of the same cell.")
+    draw_grid(ax, env, V, pi, cmap=cmap, norm=norm,
+              title=_caption("state values  V(s)  +  greedy policy", subtitle))
+    draw_q_grid(bx, env, Q, cmap=cmap, norm=norm,
+                title=_caption("action values  q(s, a)", subtitle))
+    _colorbar(fig, ax, cmap, norm, label="value")
+    _colorbar(fig, bx, cmap, norm, label="value")
     fig.savefig(path)
     plt.close(fig)
     return path
 
 
-def figure_convergence(curves: dict, totals: dict, title: str, path, *,
-                       subtitle: str | None = None, theta: float | None = None,
+def figure_convergence(curves: dict, totals: dict, path, *,
+                       subtitle=None, theta: float | None = None,
                        xlim: float | None = None):
     """패널 둘. 여기에 서로 다른 질문이 두 개 있기 때문이다.
 
@@ -574,7 +580,7 @@ def figure_convergence(curves: dict, totals: dict, title: str, path, *,
     for side in ("top", "right", "left", "bottom"):
         bx.spines[side].set_visible(False)
 
-    _titles(fig, title, subtitle)
+    _params(fig, subtitle)
     fig.savefig(path)
     plt.close(fig)
     return path
@@ -601,6 +607,20 @@ def begin_demo(text: str) -> None:
 def banner(text: str) -> None:
     rule = "=" * 72
     print(f"\n{rule}\n{text}\n{rule}")
+
+
+def figure_path(name: str, **fixed):
+    """``FIGURES/<name>_g0.9_n0.2.png``.
+
+    그 그림이 *고정한* 값만 넘긴다. gamma를 훑는 그림에 gamma를 붙이면
+    거짓말이 되므로, 훑는 값은 빼고 부른다.
+    """
+    tags = "".join(f"_{key}{value:g}" for key, value in fixed.items())
+    return FIGURES / f"{name}{tags}.png"
+
+
+def wrote(path) -> None:
+    print(f"wrote {path.parent.name}/{path.name}")
 
 
 def demo_args(argv=None, **defaults):

@@ -83,9 +83,13 @@ GAMMA_NEAR, GAMMA_FAR = 0.1, 0.99
 # 나머지 실험의 기본값. q_value_iteration과 policy_iteration도 가져다 쓰고,
 # --gamma / --noise로 덮어쓴다.
 GAMMA_VI, NOISE_VI = 0.9, 0.2
+# 노이즈 실험이 그림으로 보여주는 세 지점. q_value_iteration도 같은 것을 쓴다.
+SHOWN_NOISE = ((0.0, "nothing to avoid"),
+               (0.05, "takes the risk"),
+               (0.2, "refuses the risk"))
 
 
-def _discount(env, viz) -> None:
+def _discount(env, viz, noise) -> None:
     """할인율을 바꾸면 최적 정책이 어느 보상으로 향하는지 본다. fig03, fig04."""
     from . import gridworld as gw
 
@@ -108,24 +112,27 @@ def _discount(env, viz) -> None:
 
     viz.figure_panels(
         env,
-        [(f"gamma = {GAMMA_NEAR}\nmyopic: settles for the coin", near.V, near.pi),
-         (f"gamma = {GAMMA_FAR}\nlong-term: walks to the gem", far.V, far.pi)],
-        "The discount factor picks the target",
-        viz.FIGURES / "fig03_discount.png", ncols=2, shared_scale=False)
+        [(f"\u03b3 = {GAMMA_NEAR:g}", near.V, near.pi),
+         (f"\u03b3 = {GAMMA_FAR:g}", far.V, far.pi)],
+        discount_path := viz.figure_path("03_discount", n=noise),
+        ncols=2, shared_scale=False, params=viz.params_text(noise=noise))
 
     panels = []
     gem_column = list(env.terminal_states).index(env.to_s((1, 3)))
-    for gamma in (GAMMA_NEAR, 0.70, 0.75, GAMMA_FAR):
+    gammas = (GAMMA_NEAR, 0.70, 0.75, GAMMA_FAR)
+    for gamma in gammas:
         vi = value_iteration(env, gamma=gamma)
         # 가치에 임계값을 두는 대신 흡수 확률로 도착지를 판정한다.
         to_gem = gw.outcome_probabilities(env, vi.pi)[s2, gem_column]
         target = "gem +10" if to_gem > 0.5 else "coin +1"
         print(f"gamma = {gamma:<5} V*(s2) = {vi.V[s2]:8.4f}  -> {target}")
-        panels.append((f"gamma = {gamma:g}  ->  {target}\n"
-                       f"V*(s2) = {vi.V[s2]:.3f}", vi.V, vi.pi))
+        panels.append((f"\u03b3 = {gamma:g}", vi.V, vi.pi))
     viz.figure_panels(
-        env, panels, f"Crossing over at gamma = {crossover:.3f}",
-        viz.FIGURES / "fig04_discount_sweep.png", ncols=4, value_fmt="{:.2f}")
+        env, panels,
+        sweep_path := viz.figure_path("04_discount_sweep", n=noise),
+        ncols=4, value_fmt="{:.2f}", params=viz.params_text(noise=noise))
+    viz.wrote(discount_path)
+    viz.wrote(sweep_path)
 
 
 def _sweeps(viz, gamma, noise):
@@ -151,8 +158,9 @@ def _sweeps(viz, gamma, noise):
     panels.append(("converged", swept.V, swept.pi))
     viz.figure_panels(
         noisy, panels,
-        "Value spreads outward from the rewards, one cell per sweep",
-        viz.FIGURES / "fig05_vi_sweeps.png", ncols=3)
+        path := viz.figure_path("05_vi_sweeps", g=gamma, n=noise), ncols=3,
+        params=viz.params_text(gamma=gamma, noise=noise))
+    viz.wrote(path)
     return vi
 
 
@@ -187,19 +195,18 @@ def _noise(env, viz, gamma) -> None:
               f"{gw.describe_outcome(e, vi.pi)}")
 
     panels = []
-    for noise, caption in ((0.0, "nothing to avoid"),
-                           (0.05, "takes the risk"),
-                           (0.2, "refuses the risk")):
+    for noise, caption in SHOWN_NOISE:
         e = gw.main_grid(noise=noise)
         vi = value_iteration(e, gamma=gamma)
         print(f"\nnoise = {noise:g}   ({caption})")
         print(gw.render_policy(e, vi.pi))
-        panels.append((f"noise = {noise:g}\n{caption}", vi.V, vi.pi))
+        panels.append((f"noise = {noise:g}", vi.V, vi.pi))
 
     viz.figure_panels(
         env, panels,
-        "Slippery transitions: the agent takes a small risk, then refuses it",
-        viz.FIGURES / "fig06_noise.png", ncols=3)
+        path := viz.figure_path("06_noise_sweep", g=gamma), ncols=3,
+        params=viz.params_text(gamma=gamma))
+    viz.wrote(path)
 
 
 def main(gamma: float = GAMMA_VI, noise: float = NOISE_VI) -> None:
@@ -207,13 +214,10 @@ def main(gamma: float = GAMMA_VI, noise: float = NOISE_VI) -> None:
     from . import viz
 
     viz.begin_demo("3. Value iteration")
-    env = gw.main_grid()
-    _discount(env, viz)
+    # 할인율 실험은 결정적 격자에서 돈다.
+    _discount(gw.main_grid(), viz, noise=0.0)
     _sweeps(viz, gamma, noise)
-    _noise(env, viz, gamma)
-    for name in ("fig03_discount", "fig04_discount_sweep", "fig05_vi_sweeps",
-                 "fig06_noise"):
-        print(f"wrote {viz.FIGURES.name}/{name}.png")
+    _noise(gw.main_grid(), viz, gamma)
 
 
 if __name__ == "__main__":

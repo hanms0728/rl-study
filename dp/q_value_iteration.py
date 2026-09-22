@@ -146,7 +146,8 @@ def q_policy_evaluation(env: GridWorld, pi: np.ndarray, gamma: float,
 def main(gamma: float | None = None, noise: float | None = None) -> None:
     from . import gridworld as gw
     from . import viz
-    from .value_iteration import GAMMA_VI, NOISE_VI, value_iteration
+    from .value_iteration import (GAMMA_VI, NOISE_VI, SHOWN_NOISE,
+                                  value_iteration)
 
     gamma = GAMMA_VI if gamma is None else gamma
     noise = NOISE_VI if noise is None else noise
@@ -173,39 +174,38 @@ def main(gamma: float | None = None, noise: float | None = None) -> None:
     print("\nPicking the best action from V needs a one-step lookahead "
           "through the model;\nfrom Q it is argmax_a Q(s,a).")
 
+    vq_path = viz.figure_path("07_v_and_q", g=gamma, n=noise)
     viz.figure_v_and_q(
-        noisy, v_vi.V, v_vi.pi, q_vi.Q, "The same solution in two tables",
-        viz.FIGURES / "fig07_v_and_q.png",
-        subtitle=f"gamma = {gamma:g}, noise = {noise:g}.")
+        noisy, v_vi.V, v_vi.pi, q_vi.Q, vq_path,
+        subtitle=viz.params_text(gamma=gamma, noise=noise))
 
     snapshots_at = (1, 2, 3, 5)
     swept = q_value_iteration(noisy, gamma=gamma, in_place=False,
                               snapshots_at=snapshots_at)
     panels = [(f"k = {k}", swept.snapshots[k]) for k in snapshots_at]
     panels.append(("converged", swept.Q))
-    viz.figure_q_panels(noisy, panels, "Q-value iteration, sweep by sweep",
-                        viz.FIGURES / "fig08_q_sweeps.png", ncols=3)
+    sweeps_path = viz.figure_path("08_q_sweeps", g=gamma, n=noise)
+    viz.figure_q_panels(noisy, panels, sweeps_path, ncols=3,
+                        params=viz.params_text(gamma=gamma, noise=noise))
 
     # value_iteration.py의 노이즈 실험과 같은 설정을 Q로 다시 그린다.
     viz.banner("4b. The noise experiment in action values")
     q_panels = []
-    for noise, caption in ((0.0, "nothing to avoid"),
-                           (0.05, "takes the risk"),
-                           (0.2, "refuses the risk")):
+    for noise, caption in SHOWN_NOISE:
         e = gw.main_grid(noise=noise)
-        q_panels.append((f"noise = {noise:g}\n{caption}",
+        q_panels.append((f"noise = {noise:g}",
                          q_value_iteration(e, gamma=gamma).Q))
+    noise_path = viz.figure_path("09_noise_sweep_q", g=gamma)
     viz.figure_q_panels(
-        gw.main_grid(), q_panels,
-        "The same experiment in action values: the -100 bleeds sideways",
-        viz.FIGURES / "fig09_noise_q.png", ncols=3)
+        gw.main_grid(), q_panels, noise_path, ncols=3,
+        params=viz.params_text(gamma=gamma))
 
     print("With noise = 0 the -100 sits on one wedge per cell; with noise it "
           "spreads to\nthe neighbouring wedges, which can slip into the pit "
           "too.")
 
-    for name in ("fig07_v_and_q", "fig08_q_sweeps", "fig09_noise_q"):
-        print(f"wrote {viz.FIGURES.name}/{name}.png")
+    for path in (vq_path, sweeps_path, noise_path):
+        viz.wrote(path)
 
 
 if __name__ == "__main__":

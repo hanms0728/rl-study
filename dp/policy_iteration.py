@@ -175,9 +175,10 @@ def _evaluation(viz, gamma, noise) -> None:
     panels.append(("k = inf  (v_pi)", ev.V, gw.greedy_policy(env, ev.V, gamma)))
     viz.figure_panels(
         env, panels,
-        "Iterative policy evaluation of the uniform random policy",
-        viz.FIGURES / "fig10_policy_evaluation.png", ncols=3,
-        value_fmt="{:.1f}")
+        path := viz.figure_path("10_policy_evaluation", g=gamma, n=noise),
+        ncols=3, value_fmt="{:.1f}",
+        params=viz.params_text(gamma=gamma, noise=noise))
+    viz.wrote(path)
 
 
 def _cost(viz, gamma, noise) -> None:
@@ -221,11 +222,10 @@ def _cost(viz, gamma, noise) -> None:
 
     viz.figure_panels(
         noisy,
-        [(f"policy iteration\n{pit.n_iterations} iterations / "
-          f"{pit.n_sweeps} sweeps", pit.V, pit.pi),
-         (f"value iteration\n{vi.n_sweeps} sweeps", vi.V, vi.pi)],
-        "Both algorithms reach the same fixed point",
-        viz.FIGURES / "fig11_pi_vs_vi.png", ncols=2)
+        [(f"policy iteration   {pit.n_sweeps} sweeps", pit.V, pit.pi),
+         (f"value iteration   {vi.n_sweeps} sweeps", vi.V, vi.pi)],
+        compare_path := viz.figure_path("11_pi_vs_vi", g=gamma, n=noise),
+        ncols=2, params=viz.params_text(gamma=gamma, noise=noise))
 
     # warm_start의 방향이 격자에 따라 갈리므로 양쪽을 다 측정한다.
     cold = extra["policy iteration (from V = 0)"]
@@ -251,12 +251,11 @@ def _cost(viz, gamma, noise) -> None:
     totals = {label: r.n_sweeps for label, r in {**runs, **extra}.items()}
     viz.figure_convergence(
         {label: runs[label].deltas for label in runs}, totals,
-        "Convergence",
-        viz.FIGURES / "fig12_convergence.png",
-        subtitle=(f"gamma = {gamma:g}, noise = {noise:g}, theta = {theta:g}. "
-                  "Each spike in modified policy iteration is a "
-                  "policy-improvement step restarting the error."),
+        curve_path := viz.figure_path("12_convergence", g=gamma, n=noise),
+        subtitle=viz.params_text(gamma=gamma, noise=noise, theta=theta),
         theta=theta, xlim=45)
+    viz.wrote(compare_path)
+    viz.wrote(curve_path)
 
 
 def main(gamma: float | None = None, noise: float | None = None) -> None:
@@ -268,9 +267,6 @@ def main(gamma: float | None = None, noise: float | None = None) -> None:
     viz.begin_demo("5. Policy iteration")
     _evaluation(viz, gamma, noise)
     _cost(viz, gamma, noise)
-    for name in ("fig10_policy_evaluation", "fig11_pi_vs_vi",
-                 "fig12_convergence"):
-        print(f"wrote {viz.FIGURES.name}/{name}.png")
 
 
 if __name__ == "__main__":

@@ -188,11 +188,12 @@ def main(gamma: float = 0.9, noise: float = 0.0) -> None:
     print(f"\nOne more interior cell multiplies the search by {N_ACTIONS} "
           "and the sweep count by\nalmost nothing.")
 
+    path = viz.figure_path("02_exact", g=gamma, n=noise)
     viz.figure_value_policy(
-        env, V, pi,
-        f"The true optimum, found by trying all {total:,} deterministic policies",
-        viz.FIGURES / "fig02_exact_solution.png")
-    print(f"\nwrote {viz.FIGURES.name}/fig02_exact_solution.png")
+        env, V, pi, path,
+        subtitle=viz.params_text(gamma=gamma, noise=noise))
+    print()
+    viz.wrote(path)
 
 
 if __name__ == "__main__":
