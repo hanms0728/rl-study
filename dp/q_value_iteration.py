@@ -68,46 +68,46 @@ def q_value_iteration(env: GridWorld, gamma: float, theta: float = 1e-10,
     수도코드. ``value_iteration``과 나란히 보도록 줄 번호를 맞췄다::
 
         Parameter: a small threshold theta > 0
-        (P1) Initialise Q(s,a) arbitrarily, except Q(terminal, .) = 0
-        (P2) Loop:
-        (P3)     Delta <- 0
-        (P4)     Loop for each s in S, each a in A:
-        (P5)         q <- Q(s,a)
-        (P6)         Q(s,a) <- sum_{s',r} p(s',r|s,a)[r + gamma max_a' Q(s',a')]
-        (P7)         Delta <- max(Delta, |q - Q(s,a)|)
-        (P8) until Delta < theta
-        (P9) Output pi(s) = argmax_a Q(s,a)
+        Initialise Q(s,a) arbitrarily, except Q(terminal, .) = 0
+        Loop:
+            Delta <- 0
+            Loop for each s in S, each a in A:
+                q <- Q(s,a)
+                Q(s,a) <- sum_{s',r} p(s',r|s,a)[r + gamma max_a' Q(s',a')]
+                Delta <- max(Delta, |q - Q(s,a)|)
+        until Delta < theta
+        Output pi(s) = argmax_a Q(s,a)
 
-    다른 줄은 (P4), (P6), (P9)뿐이다. sweep이 ``|S| x |A|``개 항목을 돌고,
+    다른 줄은 안쪽 루프와 갱신식, 그리고 마지막 줄뿐이다. sweep이 ``|S| x |A|``개 항목을 돌고,
     ``max``가 안쪽으로 들어가며, 정책이 표에서 바로 나온다. 종결 행은 갱신하지
     않으므로 ``Q(종결, a) = 0``으로 남는다.
     """
-    Q = np.zeros((env.n_states, N_ACTIONS))                      # (P1)
+    Q = np.zeros((env.n_states, N_ACTIONS))
     snapshots = {0: Q.copy()} if 0 in snapshots_at else {}
     deltas = []
     sweep = 0
 
-    while sweep < max_sweeps:                                    # (P2)
+    while sweep < max_sweeps:
         sweep += 1
-        delta = 0.0                                              # (P3)
+        delta = 0.0
         source = Q if in_place else Q.copy()
 
-        for s in env.interior_states:                            # (P4)
+        for s in env.interior_states:
             for a in ACTIONS:
-                q_old = Q[s, a]                                  # (P5)
-                Q[s, a] = backup(env, source, s, a, gamma)       # (P6)
-                delta = max(delta, abs(q_old - Q[s, a]))         # (P7)
+                q_old = Q[s, a]
+                Q[s, a] = backup(env, source, s, a, gamma)
+                delta = max(delta, abs(q_old - Q[s, a]))
 
         deltas.append(delta)
         if sweep in snapshots_at:
             snapshots[sweep] = Q.copy()
-        if delta < theta:                                        # (P8)
+        if delta < theta:
             break
 
     for k in snapshots_at:
         snapshots.setdefault(k, Q.copy())
 
-    pi = greedy_policy(env, Q)                                   # (P9)
+    pi = greedy_policy(env, Q)
     return DPResult(table=Q, V=state_values(env, Q), pi=pi, deltas=deltas,
                     snapshots=snapshots, n_sweeps=sweep)
 

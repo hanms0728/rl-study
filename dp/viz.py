@@ -36,7 +36,7 @@ import matplotlib as mpl
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.colors import LinearSegmentedColormap, Normalize, TwoSlopeNorm
-from matplotlib.patches import FancyBboxPatch, Polygon, Rectangle
+from matplotlib.patches import Circle, FancyBboxPatch, Polygon, Rectangle
 from matplotlib.patheffects import withStroke
 
 from .gridworld import ACTION_DELTAS, ACTIONS, LEFT, N_ACTIONS, GridWorld
@@ -44,8 +44,8 @@ from .gridworld import ACTION_DELTAS, ACTIONS, LEFT, N_ACTIONS, GridWorld
 # --- 팔레트 -------------------------------------------------------------
 SURFACE = "#fcfcfb"
 INK = "#0b0b0b"
-INK_SECONDARY = "#52514e"
-INK_MUTED = "#898781"
+INK_SECONDARY = "#3a3a38"
+INK_MUTED = "#57554f"
 GRIDLINE = "#eceae3"
 BASELINE = "#dedcd4"
 WALL_FILL = "#d8d5cb"
@@ -158,13 +158,51 @@ def _draw_wall(ax, x, y):
                            facecolor=WALL_FILL, edgecolor="none", zorder=1))
 
 
+ICONS = Path(__file__).resolve().parent / "icons"
+_ICON_CACHE = {}
+
+
+def _terminal_icon(ax, kind, cx, cy, height):
+    """종결 칸의 그림. 강의자료가 쓰는 동전 / 보석 / 해골을 그대로 얹는다.
+
+    직접 그리지 않고 오려온 이미지를 쓰는 이유는, 발표에서 강의자료와 나란히
+    놓이기 때문이다. 같은 그림이어야 같은 칸이라는 것이 한눈에 붙는다.
+    """
+    img = _ICON_CACHE.get(kind)
+    if img is None:
+        path = ICONS / f"{kind}.png"
+        if not path.exists():
+            return
+        img = _ICON_CACHE[kind] = plt.imread(path)
+    h, w = img.shape[:2]
+    half_h = height / 2.0
+    half_w = half_h * (w / h)
+    # y축이 뒤집혀 있으므로 extent의 아래위를 바꿔 넣는다.
+    ax.imshow(img, extent=(cx - half_w, cx + half_w, cy + half_h, cy - half_h),
+              zorder=4, interpolation="antialiased")
+
+
+def _icon_kind(env, reward):
+    """보상 하나를 아이콘 이름으로. 제일 큰 양수만 보석, 나머지 양수는 동전."""
+    if reward < 0:
+        return "skull"
+    if reward > 0:
+        return "gem" if reward >= max(env.terminals.values()) else "coin"
+    return None
+
+
 def _draw_terminal(ax, env, rc, x, y):
     """종결 상태는 상태가치가 아니라 보상을 나른다. 무채색 채움에 굵은 라벨."""
     _tile(ax, x, y, "#fbfaf7", edgecolor=INK, lw=1.7, zorder=3)
     reward = env.terminals[rc]
-    ax.text(x + 0.5, y + 0.5, f"{reward:+g}" if reward else "0",
-            ha="center", va="center", color=INK, fontsize=12,
-            fontweight="semibold", zorder=4)
+    kind = _icon_kind(env, reward)
+    if kind is None:
+        ax.text(x + 0.5, y + 0.5, "0", ha="center", va="center", color=INK,
+                fontsize=12, fontweight="semibold", zorder=4)
+        return
+    _terminal_icon(ax, kind, x + 0.5, y + 0.38, 0.40)
+    ax.text(x + 0.5, y + 0.78, f"{reward:+g}", ha="center", va="center",
+            color=INK, fontsize=11, fontweight="semibold", zorder=4)
 
 
 def _draw_name(ax, name, x, y, ink, fontsize=9.0, halo=None):

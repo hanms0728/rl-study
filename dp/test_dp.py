@@ -25,7 +25,8 @@ from .gridworld import (
     policy_matches,
     uniform_random_policy,
 )
-from .policy_iteration import policy_evaluation, policy_iteration
+from .policy_iteration import (expected_policy_evaluation,
+                               policy_evaluation, policy_iteration)
 from .q_value_iteration import q_policy_evaluation, q_value_iteration
 from .q_value_iteration import greedy_policy as q_greedy_policy
 from .value_iteration import value_iteration
@@ -219,7 +220,8 @@ def test_the_agent_gives_up_risk_one_cell_at_a_time():
 def test_policy_evaluation_matches_figure_4_1():
     env = book_grid()
     pi = uniform_random_policy(env)
-    result = policy_evaluation(env, pi, gamma=1.0, theta=1e-12, in_place=False,
+    result = expected_policy_evaluation(env, pi, gamma=1.0, theta=1e-12,
+                                        in_place=False,
                                snapshots_at=(0, 1, 2, 3, 10))
     for k, expected in FIG_4_1.items():
         got = as_grid(env, result.snapshots[k])
@@ -255,7 +257,7 @@ def test_iterative_evaluation_matches_the_exact_linear_solve():
     for env, gamma in CASES:
         for pi in (uniform_random_policy(env),
                    value_iteration(env, gamma=gamma).pi):
-            iterative = policy_evaluation(env, pi, gamma, theta=1e-14).V
+            iterative = expected_policy_evaluation(env, pi, gamma, theta=1e-14).V
             exact = exact_policy_values(env, pi, gamma)
             assert np.allclose(iterative, exact, atol=1e-8), (
                 env.name, np.abs(iterative - exact).max())
@@ -270,12 +272,22 @@ def test_optimal_values_satisfy_the_bellman_optimality_equation():
         assert residual < 1e-8, (env.name, residual)
 
 
+def chosen_actions_are_optimal(env, deterministic_pi, optimal_pi) -> bool:
+    """결정론적 정책이 고른 행동이 전부 최적 집합 안에 있는가.
+
+    정책 반복은 칸마다 행동 하나를 돌려주고, 값 반복은 동점을 나눠 담은 분포를
+    돌려준다. 동점이 있는 판에서는 두 배열이 글자 그대로 같을 수 없다.
+    """
+    return all(optimal_pi[s, int(deterministic_pi[s].argmax())] > 0
+               for s in env.interior_states)
+
+
 def test_value_iteration_agrees_with_policy_iteration():
     for env, gamma in CASES:
         vi = value_iteration(env, gamma=gamma)
         pit = policy_iteration(env, gamma=gamma)
         assert np.allclose(vi.V, pit.V, atol=1e-6), env.name
-        assert policy_matches(vi.pi, pit.pi), (
+        assert chosen_actions_are_optimal(env, pit.pi, vi.pi), (
             f"{env.name}\n{gw.render_policy(env, vi.pi)}\n"
             f"---\n{gw.render_policy(env, pit.pi)}")
 
@@ -318,10 +330,15 @@ def test_policy_iteration_terminates_with_ties_everywhere():
     env = book_grid()
     result = policy_iteration(env, gamma=1.0, max_iterations=50)
     assert result.n_iterations < 50
-    # (0, 1)에는 최적 행동이 하나뿐이고(left, 종결 상태로), (1, 1)에는 둘이다
-    # (up과 left).
+    # 돌려주는 정책은 결정론적이라 칸마다 행동 하나다.
+    for s in env.interior_states:
+        assert np.count_nonzero(result.pi[s]) == 1, s
+    # (0, 1)에는 최적 행동이 하나뿐이다(left, 종결 상태로).
     assert result.pi[env.to_s((0, 1))].tolist() == [0.0, 0.0, 0.0, 1.0]
-    assert np.count_nonzero(result.pi[env.to_s((1, 1))]) == 2
+    # (1, 1)은 up과 left가 동점이다. 둘 중 하나를 골랐으면 된다.
+    optimal = value_iteration(env, gamma=1.0).pi[env.to_s((1, 1))]
+    assert np.count_nonzero(optimal) == 2
+    assert optimal[int(result.pi[env.to_s((1, 1))].argmax())] > 0
 
 
 def test_truncated_policy_iteration_saves_sweeps_when_it_works():
@@ -329,7 +346,8 @@ def test_truncated_policy_iteration_saves_sweeps_when_it_works():
     reference = policy_iteration(env, gamma=0.9)
     for cap in (1, 2, 5, 20):
         truncated = policy_iteration(env, gamma=0.9, max_eval_sweeps=cap)
-        assert policy_matches(truncated.pi, reference.pi), cap
+        assert chosen_actions_are_optimal(env, truncated.pi,
+                                          value_iteration(env, gamma=0.9).pi), cap
         assert truncated.n_sweeps <= reference.n_sweeps, (cap, truncated.n_sweeps)
 
 
@@ -359,18 +377,20 @@ def test_warm_start_does_not_change_the_answer():
 
 
 def test_warm_start_can_cost_sweeps_when_the_first_policy_is_terrible():
-    """noise = 0에서는 warm_start가 sweep을 더 쓴다.
+    """출발 정책이 나쁘면 warm_start가 sweep을 더 쓴다.
 
-    무작위 보행이 거의 확실히 -100 함정에 빠져 ``v_random``이 -58 근처까지
-    내려가는데, ``v*``는 +10 언저리라 0보다 먼 출발점이 된다.
+    모든 칸에서 왼쪽으로만 가는 정책은 -100 함정으로 걸어 들어가서 값이
+    -100 근처까지 내려간다. ``v*``는 +10 언저리라, 그 값에서 이어 시작하면
+    0에서 시작하는 것보다 먼 출발점이 된다.
     """
     env = gw.main_grid()
-    v_random = policy_evaluation(env, uniform_random_policy(env), 0.9).V
+    bad = np.full(env.n_states, gw.LEFT)
+    v_bad = policy_evaluation(env, bad, 0.9).V
     v_star = value_iteration(env, gamma=0.9).V
-    assert np.abs(v_random - v_star).max() > np.abs(v_star).max()
+    assert np.abs(v_bad - v_star).max() > np.abs(v_star).max()
 
-    cold = policy_iteration(env, gamma=0.9, warm_start=False)
-    warm = policy_iteration(env, gamma=0.9, warm_start=True)
+    cold = policy_iteration(env, gamma=0.9, warm_start=False, pi0=bad)
+    warm = policy_iteration(env, gamma=0.9, warm_start=True, pi0=bad)
     assert warm.n_sweeps > cold.n_sweeps, (warm.n_sweeps, cold.n_sweeps)
 
 
@@ -383,7 +403,7 @@ def test_q_evaluation_matches_v_evaluation():
         for pi in (uniform_random_policy(env),
                    value_iteration(env, gamma=gamma).pi):
             q_result = q_policy_evaluation(env, pi, gamma, theta=1e-13)
-            v_result = policy_evaluation(env, pi, gamma, theta=1e-13)
+            v_result = expected_policy_evaluation(env, pi, gamma, theta=1e-13)
             assert np.allclose(q_result.V, v_result.V, atol=1e-7), (
                 env.name, np.abs(q_result.V - v_result.V).max())
 

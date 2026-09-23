@@ -25,16 +25,16 @@ def value_iteration(env: GridWorld, gamma: float, theta: float = 1e-10,
     수도코드 (Sutton & Barto 4.4절)::
 
         Parameter: a small threshold theta > 0
-        (P1) Initialise V(s) arbitrarily for all s, except V(terminal) = 0
-        (P2) Loop:
-        (P3)     Delta <- 0
-        (P4)     Loop for each s in S:
-        (P5)         v <- V(s)
-        (P6)         V(s) <- max_a sum_{s',r} p(s',r|s,a)[r + gamma V(s')]
-        (P7)         Delta <- max(Delta, |v - V(s)|)
-        (P8) until Delta < theta
-        (P9) Output a deterministic policy pi with
-                 pi(s) = argmax_a sum_{s',r} p(s',r|s,a)[r + gamma V(s')]
+        Initialise V(s) arbitrarily for all s, except V(terminal) = 0
+        Loop:
+            Delta <- 0
+            Loop for each s in S:
+                v <- V(s)
+                V(s) <- max_a sum_{s',r} p(s',r|s,a)[r + gamma V(s')]
+                Delta <- max(Delta, |v - V(s)|)
+        until Delta < theta
+        Output a deterministic policy pi with
+            pi(s) = argmax_a sum_{s',r} p(s',r|s,a)[r + gamma V(s')]
 
     Parameters
     ----------
@@ -44,32 +44,32 @@ def value_iteration(env: GridWorld, gamma: float, theta: float = 1e-10,
     snapshots_at
         ``V``의 사본을 남길 sweep 번호. 0은 초기값.
     """
-    V = np.zeros(env.n_states)                                   # (P1)
+    V = np.zeros(env.n_states)
     snapshots = {0: V.copy()} if 0 in snapshots_at else {}
     deltas = []
     sweep = 0
 
-    while sweep < max_sweeps:                                    # (P2)
+    while sweep < max_sweeps:
         sweep += 1
-        delta = 0.0                                              # (P3)
+        delta = 0.0
         source = V if in_place else V.copy()
 
-        for s in env.interior_states:                            # (P4)
-            v_old = V[s]                                         # (P5)
-            V[s] = float(action_values(env, source, s, gamma).max())  # (P6)
-            delta = max(delta, abs(v_old - V[s]))                # (P7)
+        for s in env.interior_states:
+            v_old = V[s]
+            V[s] = float(action_values(env, source, s, gamma).max())
+            delta = max(delta, abs(v_old - V[s]))
 
         deltas.append(delta)
         if sweep in snapshots_at:
             snapshots[sweep] = V.copy()
-        if delta < theta:                                        # (P8)
+        if delta < theta:
             break
 
     # 수렴 이후의 sweep을 요청받았으면 최종 V로 채운다.
     for k in snapshots_at:
         snapshots.setdefault(k, V.copy())
 
-    pi = greedy_policy(env, V, gamma)                            # (P9)
+    pi = greedy_policy(env, V, gamma)
     return DPResult(table=V, V=V, pi=pi, deltas=deltas,
                     snapshots=snapshots, n_sweeps=sweep)
 

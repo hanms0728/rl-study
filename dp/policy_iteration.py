@@ -19,11 +19,13 @@ from __future__ import annotations
 import numpy as np
 
 from .gridworld import (
+    ACTIONS,
+    N_ACTIONS,
     DPResult,
     GridWorld,
     action_values,
     greedy_policy,
-    uniform_random_policy,
+    q_table_from_v,
 )
 
 
@@ -34,18 +36,22 @@ def policy_evaluation(env: GridWorld, pi: np.ndarray, gamma: float,
                       V0: np.ndarray | None = None) -> DPResult:
     """고정된 정책 ``pi``의 가치 함수 ``v_pi``를 ``theta``까지 반복해 구한다.
 
+    ``pi``는 칸마다 행동 번호 하나인 ``(n_states,)`` 배열이다. 정책 반복이
+    쓰는 정책은 결정론적이므로 수도코드의 ``p(s',r|s,pi(s))``를 그대로 돈다.
+    행동 확률로 섞인 정책은 :func:`expected_policy_evaluation`이 맡는다.
+
     수도코드 (Sutton & Barto 4.1절)::
 
         Input pi, the policy to be evaluated
         Parameter: a small threshold theta > 0
-        (P1) Initialise V(s) arbitrarily for all s, except V(terminal) = 0
-        (P2) Loop:
-        (P3)     Delta <- 0
-        (P4)     Loop for each s in S:
-        (P5)         v <- V(s)
-        (P6)         V(s) <- sum_a pi(a|s) sum_{s',r} p(s',r|s,a)[r + gamma V(s')]
-        (P7)         Delta <- max(Delta, |v - V(s)|)
-        (P8) until Delta < theta
+        Initialise V(s) arbitrarily for all s, except V(terminal) = 0
+        Loop:
+            Delta <- 0
+            Loop for each s in S:
+                v <- V(s)
+                V(s) <- sum_a pi(a|s) sum_{s',r} p(s',r|s,a)[r + gamma V(s')]
+                Delta <- max(Delta, |v - V(s)|)
+        until Delta < theta
 
     Parameters
     ----------
@@ -58,30 +64,73 @@ def policy_evaluation(env: GridWorld, pi: np.ndarray, gamma: float,
         시작 ``V``. :func:`policy_iteration`이 ``warm_start``일 때 이전 정책의
         값을 여기로 넘긴다.
     """
-    V = np.zeros(env.n_states) if V0 is None else np.asarray(V0, float).copy()  # (P1)
-    V[list(env.terminal_states)] = 0.0  # (P1)
+    V = np.zeros(env.n_states) if V0 is None else np.asarray(V0, float).copy()
+    V[list(env.terminal_states)] = 0.0
     snapshots = {0: V.copy()} if 0 in snapshots_at else {}
     deltas = []
     sweep = 0
 
-    while sweep < max_sweeps:                                    # (P2)
+    while sweep < max_sweeps:
         sweep += 1
-        delta = 0.0                                              # (P3)
+        delta = 0.0
         source = V if in_place else V.copy()
 
-        for s in env.interior_states:                            # (P4)
-            v_old = V[s]                                         # (P5)
-            q = action_values(env, source, s, gamma)
-            V[s] = float(np.dot(pi[s], q))                       # (P6)
-            delta = max(delta, abs(v_old - V[s]))                # (P7)
+        for s in env.interior_states:
+            v_old = V[s]
+            V[s] = sum(p * (r + gamma * source[s2])
+                       for p, s2, r, _ in env.P[s][pi[s]])
+            delta = max(delta, abs(v_old - V[s]))
 
         deltas.append(delta)
         if sweep in snapshots_at:
             snapshots[sweep] = V.copy()
-        if delta < theta:                                        # (P8)
+        if delta < theta:
             break
 
     # 수렴 이후의 sweep을 요청받았으면 최종 V로 채운다.
+    for k in snapshots_at:
+        snapshots.setdefault(k, V.copy())
+
+    return DPResult(table=V, V=V, pi=np.asarray(pi).copy(), deltas=deltas,
+                    snapshots=snapshots, n_sweeps=sweep)
+
+
+def expected_policy_evaluation(env: GridWorld, pi: np.ndarray, gamma: float,
+                               theta: float = 1e-10, in_place: bool = True,
+                               max_sweeps: int = 100_000,
+                               snapshots_at: tuple = (),
+                               V0: np.ndarray | None = None) -> DPResult:
+    """행동 확률로 섞인 정책의 ``v_pi``.
+
+    ``pi``가 ``(n_states, n_actions)`` 확률 배열이라 갱신식이 한 겹 더 있다::
+
+        V(s) <- sum_a pi(a|s) sum_{s',r} p(s',r|s,a)[r + gamma V(s')]
+
+    정책 반복은 이걸 쓰지 않는다. 그쪽 정책은 결정론적이다. 균등 무작위 정책을
+    평가해 보일 때와 교과서 그림 4.1을 대조할 때만 쓴다.
+    """
+    V = np.zeros(env.n_states) if V0 is None else np.asarray(V0, float).copy()
+    V[list(env.terminal_states)] = 0.0
+    snapshots = {0: V.copy()} if 0 in snapshots_at else {}
+    deltas = []
+    sweep = 0
+
+    while sweep < max_sweeps:
+        sweep += 1
+        delta = 0.0
+        source = V if in_place else V.copy()
+
+        for s in env.interior_states:
+            v_old = V[s]
+            V[s] = float(np.dot(pi[s], action_values(env, source, s, gamma)))
+            delta = max(delta, abs(v_old - V[s]))
+
+        deltas.append(delta)
+        if sweep in snapshots_at:
+            snapshots[sweep] = V.copy()
+        if delta < theta:
+            break
+
     for k in snapshots_at:
         snapshots.setdefault(k, V.copy())
 
@@ -92,27 +141,37 @@ def policy_evaluation(env: GridWorld, pi: np.ndarray, gamma: float,
 def policy_iteration(env: GridWorld, gamma: float, theta: float = 1e-10,
                      in_place: bool = True, max_iterations: int = 1_000,
                      max_eval_sweeps: int = 100_000, warm_start: bool = True,
-                     pi0: np.ndarray | None = None) -> DPResult:
+                     pi0: np.ndarray | None = None,
+                     tol: float = 1e-8) -> DPResult:
     """평가와 탐욕 개선을 정책이 더 바뀌지 않을 때까지 번갈아 돌린다.
 
     수도코드 (Sutton & Barto 4.3절)::
 
-        (P1) 1. Initialisation
-        (P2)    V(s) and pi(s) arbitrary, for all s in S
-        (P3) 2. Policy Evaluation
-        (P4)    (the loop of section 4.1, run to convergence under pi)
-        (P5) 3. Policy Improvement
-        (P6)    policy-stable <- true
-        (P7)    For each s in S:
-        (P8)        old-action <- pi(s)
-        (P9)        pi(s) <- argmax_a sum_{s',r} p(s',r|s,a)[r + gamma V(s')]
-        (P10)       If old-action != pi(s), then policy-stable <- false
-        (P11)   If policy-stable, stop and return V ~ v*, pi ~ pi*;
-                else go to 2
+        1. Initialisation
+           V(s) and pi(s) arbitrary, for all s in S
+        2. Policy Evaluation
+           (the loop of section 4.1, run to convergence under pi)
+        3. Policy Improvement
+           policy-stable <- true
+           For each s in S:
+               old-action <- pi(s)
+               pi(s) <- argmax_a sum_{s',r} p(s',r|s,a)[r + gamma V(s')]
+               If old-action != pi(s), then policy-stable <- false
+           If policy-stable, stop and return V ~ v*, pi ~ pi*;
+           else go to 2
 
-    (P8)-(P10)을 행동 하나가 아니라 행동 분포 전체로 비교한다. 동점을 균등하게
-    나누므로 같은 판정이면서, 똑같이 탐욕적인 두 행동 사이를 오가며 끝나지 않는
-    일이 생기지 않는다.
+    정책은 수도코드대로 결정론적이다. 칸마다 행동 번호 하나를 들고 다니고,
+    평가에도 그대로 넘긴다.
+
+    개선 단계에서 ``argmax``를 그냥 쓰면 똑같이 최적인 두 행동 사이를 영원히
+    오갈 수 있다. 정지 조건이 "정책이 안 바뀜"이기 때문이다. 그래서 지금 들고
+    있는 행동이 여전히 최선이면 그대로 두고, **더 나은 행동이 있을 때만**
+    바꾼다. 같은 판정이면서 진동하지 않는다.
+
+    돌려주는 ``pi``도 결정론적이다. 칸마다 행동 하나에만 1이 선다. 값 반복이
+    돌려주는 것은 동점을 나눠 담은 분포라, 동점이 있는 판에서는 두 정책이
+    글자 그대로 같지는 않다. 대신 정책 반복이 고른 행동이 값 반복이 최적이라
+    본 행동들 안에 들어 있으면 된다(``test_dp.py``가 그렇게 대조한다).
 
     Parameters
     ----------
@@ -127,14 +186,19 @@ def policy_iteration(env: GridWorld, gamma: float, theta: float = 1e-10,
         ``noise=0.2``면 sweep을 아끼고 ``noise=0``이면 오히려 손해다.
         ``python -m dp.policy_iteration``이 둘 다 찍는다.
     """
-    pi = uniform_random_policy(env) if pi0 is None else pi0.copy()  # (P1)(P2)
+    # 칸마다 행동 번호 하나. 시작 정책은 아무거나여도 되므로 전부 같은 쪽.
+    actions = np.zeros(env.n_states, dtype=int)
+    if pi0 is not None:
+        pi0 = np.asarray(pi0)
+        actions = pi0.argmax(axis=1) if pi0.ndim == 2 else pi0.astype(int).copy()
+
     V = np.zeros(env.n_states)
     deltas, eval_sweeps = [], []
     total_sweeps = 0
 
     for iteration in range(1, max_iterations + 1):
-        # --- 2. 평가 ----------------------------------------------- (P3)(P4)
-        evaluation = policy_evaluation(env, pi, gamma, theta=theta,
+        # --- 2. 평가 -----------------------------------------------
+        evaluation = policy_evaluation(env, actions, gamma, theta=theta,
                                        in_place=in_place,
                                        max_sweeps=max_eval_sweeps,
                                        V0=V if warm_start else None)
@@ -143,13 +207,22 @@ def policy_iteration(env: GridWorld, gamma: float, theta: float = 1e-10,
         eval_sweeps.append(evaluation.n_sweeps)
         total_sweeps += evaluation.n_sweeps
 
-        # --- 3. 개선 ----------------------------------------------- (P5)(P6)
-        pi_new = greedy_policy(env, V, gamma)                        # (P7)-(P9)
-        policy_stable = np.allclose(pi, pi_new)                      # (P10)
-        pi = pi_new
-        if policy_stable:                                            # (P11)
+        # --- 3. 개선 -----------------------------------------------
+        # 지금 행동이 여전히 최선이면 그대로 둔다. 동점에서 진동하지 않는다.
+        q = q_table_from_v(env, V, gamma)
+        new_actions = actions.copy()
+        for s in env.interior_states:
+            if q[s, actions[s]] < q[s].max() - tol:
+                new_actions[s] = int(q[s].argmax())
+        policy_stable = np.array_equal(actions, new_actions)
+        actions = new_actions
+        if policy_stable:
             break
 
+    # 결정론적 정책을 그대로 돌려준다. 칸마다 행동 하나에 1.
+    pi = np.zeros((env.n_states, N_ACTIONS))
+    for s in env.interior_states:
+        pi[s, actions[s]] = 1.0
     return DPResult(table=V, V=V, pi=pi, deltas=deltas,
                     n_sweeps=total_sweeps, n_iterations=iteration,
                     eval_sweeps=eval_sweeps)
@@ -165,7 +238,7 @@ def _evaluation(viz, gamma, noise, step_reward) -> None:
     viz.banner("5a. Evaluating the uniform random policy")
     env = gw.main_grid(noise=noise, step_reward=step_reward)
     snapshots_at = (0, 1, 2, 3, 10)
-    ev = policy_evaluation(env, gw.uniform_random_policy(env), gamma=gamma,
+    ev = expected_policy_evaluation(env, gw.uniform_random_policy(env), gamma=gamma,
                            theta=1e-12, snapshots_at=snapshots_at)
     print(f"converged in {ev.n_sweeps} sweeps")
     print(gw.render_values(env, ev.V))
@@ -237,7 +310,7 @@ def _cost(viz, gamma, noise, step_reward) -> None:
     plain_warm = policy_iteration(plain, gamma=gamma, theta=theta)
     plain_cold = policy_iteration(plain, gamma=gamma, theta=theta,
                                   warm_start=False)
-    v_rand = policy_evaluation(plain, gw.uniform_random_policy(plain),
+    v_rand = expected_policy_evaluation(plain, gw.uniform_random_policy(plain),
                                gamma).V
     v_star = value_iteration(plain, gamma=gamma).V
 
