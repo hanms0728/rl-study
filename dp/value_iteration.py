@@ -52,11 +52,13 @@ def value_iteration(env: GridWorld, gamma: float, theta: float = 1e-10,
     while sweep < max_sweeps:
         sweep += 1
         delta = 0.0
-        source = V if in_place else V.copy()
+        # 읽는 쪽은 V_k, 쓰는 쪽은 V. in_place 면 같은 배열이라
+        # 이번 sweep에서 갱신된 이웃 값을 바로 읽는다.
+        V_k = V if in_place else V.copy()
 
         for s in env.interior_states:
             v_old = V[s]
-            V[s] = float(action_values(env, source, s, gamma).max())
+            V[s] = float(action_values(env, V_k, s, gamma).max())
             delta = max(delta, abs(v_old - V[s]))
 
         deltas.append(delta)

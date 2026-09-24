@@ -73,11 +73,13 @@ def policy_evaluation(env: GridWorld, pi: np.ndarray, gamma: float,
     while sweep < max_sweeps:
         sweep += 1
         delta = 0.0
-        source = V if in_place else V.copy()
+        # 읽는 쪽은 V_k, 쓰는 쪽은 V. in_place 면 같은 배열이라
+        # 이번 sweep에서 갱신된 이웃 값을 바로 읽는다.
+        V_k = V if in_place else V.copy()
 
         for s in env.interior_states:
             v_old = V[s]
-            V[s] = sum(p * (r + gamma * source[s2])
+            V[s] = sum(p * (r + gamma * V_k[s2])
                        for p, s2, r, _ in env.P[s][pi[s]])
             delta = max(delta, abs(v_old - V[s]))
 
@@ -118,11 +120,13 @@ def expected_policy_evaluation(env: GridWorld, pi: np.ndarray, gamma: float,
     while sweep < max_sweeps:
         sweep += 1
         delta = 0.0
-        source = V if in_place else V.copy()
+        # 읽는 쪽은 V_k, 쓰는 쪽은 V. in_place 면 같은 배열이라
+        # 이번 sweep에서 갱신된 이웃 값을 바로 읽는다.
+        V_k = V if in_place else V.copy()
 
         for s in env.interior_states:
             v_old = V[s]
-            V[s] = float(np.dot(pi[s], action_values(env, source, s, gamma)))
+            V[s] = float(np.dot(pi[s], action_values(env, V_k, s, gamma)))
             delta = max(delta, abs(v_old - V[s]))
 
         deltas.append(delta)

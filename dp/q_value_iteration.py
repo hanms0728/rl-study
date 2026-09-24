@@ -90,12 +90,14 @@ def q_value_iteration(env: GridWorld, gamma: float, theta: float = 1e-10,
     while sweep < max_sweeps:
         sweep += 1
         delta = 0.0
-        source = Q if in_place else Q.copy()
+        # 읽는 쪽은 Q_k, 쓰는 쪽은 Q. in_place 면 같은 배열이라
+        # 이번 sweep에서 갱신된 이웃 값을 바로 읽는다.
+        Q_k = Q if in_place else Q.copy()
 
         for s in env.interior_states:
             for a in ACTIONS:
                 q_old = Q[s, a]
-                Q[s, a] = backup(env, source, s, a, gamma)
+                Q[s, a] = backup(env, Q_k, s, a, gamma)
                 delta = max(delta, abs(q_old - Q[s, a]))
 
         deltas.append(delta)
@@ -126,11 +128,13 @@ def q_policy_evaluation(env: GridWorld, pi: np.ndarray, gamma: float,
     while sweep < max_sweeps:
         sweep += 1
         delta = 0.0
-        source = Q if in_place else Q.copy()
+        # 읽는 쪽은 Q_k, 쓰는 쪽은 Q. in_place 면 같은 배열이라
+        # 이번 sweep에서 갱신된 이웃 값을 바로 읽는다.
+        Q_k = Q if in_place else Q.copy()
         for s in env.interior_states:
             for a in ACTIONS:
                 q_old = Q[s, a]
-                Q[s, a] = backup(env, source, s, a, gamma, pi)
+                Q[s, a] = backup(env, Q_k, s, a, gamma, pi)
                 delta = max(delta, abs(q_old - Q[s, a]))
         deltas.append(delta)
         if delta < theta:
