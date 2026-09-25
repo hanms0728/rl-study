@@ -232,7 +232,8 @@ def _draw_arrows(ax, pi, s, x, y, colour):
     중심에서 밖으로 뻗는 형태로 바꾼다.
     """
     allowed = [a for a in ACTIONS if pi[s, a] > 0]
-    tail, head = (-0.23, 0.23) if len(allowed) == 1 else (0.07, 0.36)
+    # 동점 화살표는 0.30 에서 멈춘다. 더 길면 위쪽 화살촉이 모서리의 값 숫자에 닿는다.
+    tail, head = (-0.23, 0.23) if len(allowed) == 1 else (0.07, 0.30)
     for a in allowed:
         dr, dc = ACTION_DELTAS[a]
         ax.annotate(
